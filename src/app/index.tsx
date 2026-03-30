@@ -1,98 +1,91 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+import { getCityCoordinates, getCoordinates } from '@/utils/locationUtils';
+import { cancelAlarm, requestPermission, scheduleAlarm } from '@/utils/notificationUtils';
+import { fetchSunriseTime } from '@/utils/sunriseUtils';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function HomeScreen() {
+  const [isEnabled, setIsEnabled] = useState(false);
+  const [sunRise, setSunRise] = useState<string>("Loading...");
+  const [error, setError] = useState<boolean>(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    const load = async () => {
+      let coords = await getCoordinates();
+      if(!coords){
+        const city = await AsyncStorage.getItem('fallbackCity');
+        if (city) coords = await getCityCoordinates(city);
+      }
+      if (!coords) {
+        setError(true);
+        return;
+      }
+      const time = await fetchSunriseTime(coords.lat, coords.lng);
+      if (time) setSunRise(time);
+      else setError(true);
+
+      // after fetching sunrise, also load saved alarm state
+      const saved = await AsyncStorage.getItem('alarmEnabled');
+      if (saved !== null) setIsEnabled(JSON.parse(saved));
+
+      };
+    load();
+  }, []);
+
+  const handlePress = async () => {
+    if(isEnabled){
+      await cancelAlarm();
+    }
+    else{
+      const granted = await requestPermission();
+      if (granted) await scheduleAlarm(sunRise);
+    }
+    const newValue = !isEnabled;
+    setIsEnabled(newValue);
+    await AsyncStorage.setItem('alarmEnabled', JSON.stringify(newValue));
+  };
+
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
-
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+    // your code here
+    <View style={styles.container}>
+      <TouchableOpacity onPress={() => router.push('/settings')}>
+        <Text>⚙️ Settings</Text>
+      </TouchableOpacity>
+      <Text>🌅</Text>
+      <Text> Sunrise alarm</Text>
+      <Text> Next sunrise: {error ? "Failed to load" : sunRise}</Text>
+      <TouchableOpacity style={[styles.button, isEnabled ? styles.buttonActive : styles.buttonInActive]} onPress={handlePress}> 
+        <Text style={styles.buttonText}>{isEnabled? 'Disable alarm' : 'Enable alarm'}</Text>
+      </TouchableOpacity>
+      <Text>{isEnabled? `Alarm set for ${sunRise}` : "No alarm set"}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
+  // your styles here
+  container:{
+    flex:1,
     alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
+    justifyContent: 'center'
   },
-  heroSection: {
+  button:{
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+    borderRadius: 10,
+    padding: 10
   },
-  title: {
-    textAlign: 'center',
+  buttonActive: {
+    backgroundColor: '#2a9d5c',  // green = alarm is ON
   },
-  code: {
-    textTransform: 'uppercase',
+  buttonInActive: {
+    backgroundColor: '#ff7b00',  // orange = alarm is OFF
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
+  buttonText:{
+    color:'white',
+    fontSize: 16
+  }
 });
