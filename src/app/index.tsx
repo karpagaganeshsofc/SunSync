@@ -14,7 +14,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const [offset, setOffset]= useState<number>(0);
   const [countdown, setCountdown] = useState<string>("Calculating...");
-
+  const [days, setDays] = useState<number[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -38,6 +38,9 @@ export default function HomeScreen() {
       const savedOffset = await AsyncStorage.getItem('alarmOffset');
       if (savedOffset) setOffset(JSON.parse(savedOffset));
 
+      const savedDays = await AsyncStorage.getItem('alarmDays');
+      if (savedDays) setDays(JSON.parse(savedDays));
+
       };
     load();
   }, []);
@@ -59,7 +62,7 @@ export default function HomeScreen() {
     }
     else{
       const granted = await requestPermission();
-      if (granted) await scheduleAlarm(sunRise, offset);
+      if (granted) await scheduleAlarm(sunRise, offset,days);
     }
     const newValue = !isEnabled;
     setIsEnabled(newValue);
