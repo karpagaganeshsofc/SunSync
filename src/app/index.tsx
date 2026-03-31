@@ -1,11 +1,12 @@
 import { getCityCoordinates, getCoordinates } from '@/utils/locationUtils';
 import { cancelAlarm, requestPermission, scheduleAlarm } from '@/utils/notificationUtils';
+import { fetchSunRisePhoto } from '@/utils/photoUtils';
 import { fetchSunriseTime } from '@/utils/sunriseUtils';
 import { getCountDown } from '@/utils/timeUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ImageBackground, StyleSheet, Text, TouchableOpacity } from 'react-native';
 
 export default function HomeScreen() {
   const [isEnabled, setIsEnabled] = useState(false);
@@ -15,6 +16,7 @@ export default function HomeScreen() {
   const [offset, setOffset]= useState<number>(0);
   const [countdown, setCountdown] = useState<string>("Calculating...");
   const [days, setDays] = useState<number[]>([]);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -40,6 +42,10 @@ export default function HomeScreen() {
 
       const savedDays = await AsyncStorage.getItem('alarmDays');
       if (savedDays) setDays(JSON.parse(savedDays));
+
+      const city = await AsyncStorage.getItem('fallbackCity');
+      const photo = await fetchSunRisePhoto(city ?? 'sunrise');
+      if (photo) setPhotoUrl(photo);
 
       };
     load();
@@ -71,7 +77,7 @@ export default function HomeScreen() {
 
   return (
     // your code here
-    <View style={styles.container}>
+    <ImageBackground source={photoUrl ? { uri: photoUrl } : undefined} style={styles.container}>
       <TouchableOpacity onPress={() => router.push('/settings')}>
         <Text>⚙️ Settings</Text>
       </TouchableOpacity>
@@ -83,7 +89,7 @@ export default function HomeScreen() {
         <Text style={styles.buttonText}>{isEnabled? 'Disable alarm' : 'Enable alarm'}</Text>
       </TouchableOpacity>
       <Text>{isEnabled? `Alarm set for ${sunRise}` : "No alarm set"}</Text>
-    </View>
+    </ImageBackground>
   );
 }
 
