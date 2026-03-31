@@ -11,6 +11,7 @@ export default function HomeScreen() {
   const [sunRise, setSunRise] = useState<string>("Loading...");
   const [error, setError] = useState<boolean>(false);
   const router = useRouter();
+  const [offset, setOffset]= useState<number>(0);
 
   useEffect(() => {
     const load = async () => {
@@ -31,6 +32,9 @@ export default function HomeScreen() {
       const saved = await AsyncStorage.getItem('alarmEnabled');
       if (saved !== null) setIsEnabled(JSON.parse(saved));
 
+      const savedOffset = await AsyncStorage.getItem('alarmOffset');
+      if (savedOffset) setOffset(JSON.parse(savedOffset));
+
       };
     load();
   }, []);
@@ -41,7 +45,7 @@ export default function HomeScreen() {
     }
     else{
       const granted = await requestPermission();
-      if (granted) await scheduleAlarm(sunRise);
+      if (granted) await scheduleAlarm(sunRise, offset);
     }
     const newValue = !isEnabled;
     setIsEnabled(newValue);

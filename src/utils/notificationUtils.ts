@@ -1,22 +1,31 @@
 import * as Notifications from 'expo-notifications';
+import { getAlarmTime } from './timeUtils';
 
 export async function requestPermission(): Promise<boolean>{
     const { status } = await Notifications.requestPermissionsAsync();
     return status === 'granted';
 }
 
-export async function scheduleAlarm(time: string){
+export async function scheduleAlarm(time: string, offset: number){
     const [timePart, meridian] = time.split(" ");
     const [hourStr, minuteStr] = timePart.split(":");
     let hour = parseInt(hourStr);
     const minutes = parseInt(minuteStr);
 
-    if (meridian === "PM" && hour !== 12) hour+=12;
-    if (meridian === "AM" && hour===12) hour =0;
+    const adjustedTime = getAlarmTime(hour, minutes, offset);
+
+    const [adjTimePart, adjMeridian] = adjustedTime.split(" ");
+    const [adjHourStr, adjMinuteStr] = adjTimePart.split(":");
+    let hour_updated = parseInt(adjHourStr);
+    const minutes_updated = parseInt(adjMinuteStr);
+
+    if (adjMeridian === "PM" && hour_updated !== 12) hour_updated+=12;
+    if (adjMeridian === "AM" && hour_updated===12) hour_updated =0;
+
 
     const trigger = new Date();
-    trigger.setHours(hour);
-    trigger.setMinutes(minutes);
+    trigger.setHours(hour_updated);
+    trigger.setMinutes(minutes_updated);
     trigger.setSeconds(0);
 
     if (trigger <= new Date()) {
