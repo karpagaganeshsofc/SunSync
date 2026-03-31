@@ -1,6 +1,7 @@
 import { getCityCoordinates, getCoordinates } from '@/utils/locationUtils';
 import { cancelAlarm, requestPermission, scheduleAlarm } from '@/utils/notificationUtils';
 import { fetchSunriseTime } from '@/utils/sunriseUtils';
+import { getCountDown } from '@/utils/timeUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -12,6 +13,8 @@ export default function HomeScreen() {
   const [error, setError] = useState<boolean>(false);
   const router = useRouter();
   const [offset, setOffset]= useState<number>(0);
+  const [countdown, setCountdown] = useState<string>("Calculating...");
+
 
   useEffect(() => {
     const load = async () => {
@@ -39,6 +42,17 @@ export default function HomeScreen() {
     load();
   }, []);
 
+  useEffect(() => {
+  if (sunRise === "Loading...") return;
+  setCountdown(getCountDown(sunRise));  // run immediately on load
+  
+  const interval = setInterval(() => {
+    setCountdown(getCountDown(sunRise));
+  }, 60000);
+
+  return () => clearInterval(interval);
+}, [sunRise]);  // ← re-runs when sunRise changes from "Loading..." to real value
+
   const handlePress = async () => {
     if(isEnabled){
       await cancelAlarm();
@@ -61,6 +75,7 @@ export default function HomeScreen() {
       <Text>🌅</Text>
       <Text> Sunrise alarm</Text>
       <Text> Next sunrise: {error ? "Failed to load" : sunRise}</Text>
+      <Text>🌅 {countdown}</Text>
       <TouchableOpacity style={[styles.button, isEnabled ? styles.buttonActive : styles.buttonInActive]} onPress={handlePress}> 
         <Text style={styles.buttonText}>{isEnabled? 'Disable alarm' : 'Enable alarm'}</Text>
       </TouchableOpacity>

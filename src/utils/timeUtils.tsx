@@ -15,3 +15,29 @@ export function getAlarmTime(sunriseHour: number, sunriseMinute: number, offsetM
     let result = hour + ":" + minuteStr + " " + meridian;
     return result;
 }
+
+export function getCountDown(sunriseTime: string): string{
+    if (sunriseTime === "Loading...") return "Calculating...";
+
+    const [timepart,meridian]=sunriseTime.split(" ");
+    const [hourStr, minuteStr]=timepart.split(":");
+    let hour = parseInt(hourStr);
+    const minute = parseInt(minuteStr);
+
+    if (meridian === "PM" && hour !== 12) hour+=12;
+    if (meridian === "AM" && hour===12) hour =0;
+
+    const now=new Date();
+    const target=new Date();
+    target.setHours(hour);
+    target.setMinutes(minute);
+    target.setSeconds(0);
+
+    const diffMs = target.getTime() - now.getTime(); // difference in milliseconds
+    const diffMins = Math.floor(diffMs/60000); // convert to minutes
+    const remainingHours = Math.floor(diffMins/60);
+    const remainingMins = diffMins%60;
+
+    if (diffMs <= 0) return "Risen — next sunrise tomorrow";
+    return `${remainingHours}h, ${remainingMins}m`;
+}
