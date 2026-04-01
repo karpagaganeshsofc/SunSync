@@ -1,11 +1,14 @@
+import { parseAlarmCommand } from '@/utils/aiUtils';
 import { getCityCoordinates, getCoordinates } from '@/utils/locationUtils';
 import { cancelAlarm, requestPermission, scheduleAlarm } from '@/utils/notificationUtils';
 import { fetchSunRisePhoto } from '@/utils/photoUtils';
 import { fetchSunriseTime } from '@/utils/sunriseUtils';
 import { getCountDown } from '@/utils/timeUtils';
+import { requestMicPermission } from '@/utils/voiceUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
+import { useEffect, useRef, useState } from 'react';
 import { ImageBackground, StyleSheet, Text, TouchableOpacity } from 'react-native';
 
 export default function HomeScreen() {
@@ -17,6 +20,11 @@ export default function HomeScreen() {
   const [countdown, setCountdown] = useState<string>("Calculating...");
   const [days, setDays] = useState<number[]>([]);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  // state for the transcribed text
+  const [transcript, setTranscript] = useState<string>('');
+  const [isListening, setIsListening] = useState<boolean>(false);
+
+  const transcriptRef = useRef<string>('');
 
   useEffect(() => {
     const load = async () => {
@@ -52,15 +60,40 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-  if (sunRise === "Loading...") return;
-  setCountdown(getCountDown(sunRise));  // run immediately on load
-  
-  const interval = setInterval(() => {
-    setCountdown(getCountDown(sunRise));
-  }, 60000);
+    if (sunRise === "Loading...") return;
+    setCountdown(getCountDown(sunRise));  // run immediately on load
+    
+    const interval = setInterval(() => {
+      setCountdown(getCountDown(sunRise));
+    }, 60000);
 
-  return () => clearInterval(interval);
-}, [sunRise]);  // ← re-runs when sunRise changes from "Loading..." to real value
+    return () => clearInterval(interval);
+  }, [sunRise]);  // ← re-runs when sunRise changes from "Loading..." to real value
+
+  // event hooks — these go alongside your other useEffects
+  // update both state and ref when transcript changes
+  useSpeechRecognitionEvent("result", (event) => {
+    const text = event.results[0]?.transcript ?? '';
+    console.log('Heard:', text);
+    setTranscript(text);
+    transcriptRef.current = text;  // ← always up to date
+  });
+
+  // use ref inside "end" handler
+  useSpeechRecognitionEvent("end", async () => {
+    setIsListening(false);
+    if (!transcriptRef.current) return;  // ← use ref not state
+    const newOffset = await parseAlarmCommand(transcriptRef.current);
+    if (newOffset !== null) {
+      setOffset(newOffset);
+      await AsyncStorage.setItem('alarmOffset', JSON.stringify(newOffset));
+      // auto schedule with new offset
+      const granted = await requestPermission();
+      if (granted) await scheduleAlarm(sunRise, newOffset, days);
+      setIsEnabled(true);
+      await AsyncStorage.setItem('alarmEnabled', JSON.stringify(true));
+    }
+  });
 
   const handlePress = async () => {
     if(isEnabled){
@@ -73,6 +106,15 @@ export default function HomeScreen() {
     const newValue = !isEnabled;
     setIsEnabled(newValue);
     await AsyncStorage.setItem('alarmEnabled', JSON.stringify(newValue));
+  };
+
+  // function to start listening
+  const startListening = async () => {
+    const granted = await requestMicPermission();
+    if (!granted) return;
+    setIsListening(true);
+    setTranscript('');
+    ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: false });
   };
 
   return (
@@ -89,6 +131,12 @@ export default function HomeScreen() {
         <Text style={styles.buttonText}>{isEnabled? 'Disable alarm' : 'Enable alarm'}</Text>
       </TouchableOpacity>
       <Text>{isEnabled? `Alarm set for ${sunRise}` : "No alarm set"}</Text>
+      <TouchableOpacity
+        style={[styles.micButton, isListening ? styles.micActive : styles.micInactive]}
+        onPress={startListening}
+      >
+        <Text style={styles.micText}>{isListening ? '🎙️ Listening...' : '🎤'}</Text>
+      </TouchableOpacity>
     </ImageBackground>
   );
 }
@@ -115,5 +163,18 @@ const styles = StyleSheet.create({
   buttonText:{
     color:'white',
     fontSize: 16
-  }
+  },
+  micButton: {
+    position: 'absolute',
+    bottom: 40,
+    right: 30,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  micActive: { backgroundColor: '#e74c3c' },
+  micInactive: { backgroundColor: '#ff7b00' },
+  micText: { fontSize: 24 },
 });
