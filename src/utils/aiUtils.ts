@@ -1,4 +1,5 @@
-export async function parseAlarmCommand(transcript: string): Promise<number | null>{
+export async function parseAlarmCommand(transcript: string): Promise<number | 'cancel' | null>{
+try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
   method: 'POST',
   headers: {
@@ -13,15 +14,16 @@ export async function parseAlarmCommand(transcript: string): Promise<number | nu
       role: 'user',
       content: transcript
     }],
-    system: `You are an alarm assistant. The user will say something like "wake me up 30 minutes before sunrise" or "set alarm 15 minutes after sunrise". Extract the offset in minutes from sunrise. Before sunrise = negative number. After sunrise = positive number. At sunrise = 0. Reply with ONLY a JSON object like: {"offset": -30}. Nothing else.`
+    system: `You are an alarm assistant. The user will either set or cancel an alarm relative to sunrise. If the user wants to set an alarm (e.g. "wake me up 30 minutes before sunrise", "set alarm at sunrise"), reply with ONLY: {"action": "set", "offset": -30} where offset is minutes from sunrise (negative = before, positive = after, 0 = at sunrise). If the user wants to cancel/disable/turn off the alarm (e.g. "cancel my alarm", "turn off alarm", "disable alarm"), reply with ONLY: {"action": "cancel"}. Nothing else.`
   })
 });
 
-try {
-  const data = await response.json();
-  const text = data.content[0].text;
-  const parsed = JSON.parse(text);
-  return parsed.offset;
+    const data = await response.json();
+    const text = data.content[0].text;
+    const parsed = JSON.parse(text);
+    if (parsed.action === 'cancel') return 'cancel';
+    if (parsed.action === 'set' && typeof parsed.offset === 'number') return parsed.offset;
+    return null;
 } catch (e) {
   return null;
 }

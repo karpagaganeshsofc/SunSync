@@ -26,10 +26,17 @@ export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const transcriptRef = useRef<string>('');
+  const sunRiseRef = useRef<string>(sunRise);
+  const daysRef = useRef<number[]>(days);
+
+  // keep refs in sync with state
+  useEffect(() => { sunRiseRef.current = sunRise; }, [sunRise]);
+  useEffect(() => { daysRef.current = days; }, [days]);
 
   useFocusEffect(
     useCallback(() => {
       const load = async () => {
+        setError(false);  // reset error state on each load attempt
         // Step 1: read all local AsyncStorage values in parallel — instant, no network
         const [saved, savedOffset, savedDays, savedCity, cachedSunrise, cachedDate] =
           await Promise.all([
@@ -114,13 +121,25 @@ export default function HomeScreen() {
   useSpeechRecognitionEvent("end", async () => {
     setIsListening(false);
     if (!transcriptRef.current) return;  // ← use ref not state
-    const newOffset = await parseAlarmCommand(transcriptRef.current);
-    if (newOffset !== null) {
+    const result = await parseAlarmCommand(transcriptRef.current);
+
+    if (result === 'cancel') {
+      await cancelAlarm();
+      setIsEnabled(false);
+      await AsyncStorage.setItem('alarmEnabled', JSON.stringify(false));
+      return;
+    }
+
+    if (result !== null) {
+      const newOffset = result;
       setOffset(newOffset);
       await AsyncStorage.setItem('alarmOffset', JSON.stringify(newOffset));
-      // auto schedule with new offset
+      // auto schedule with new offset — cancel old alarm first, then reschedule
       const granted = await requestPermission();
-      if (granted) await scheduleAlarm(sunRise, newOffset, days);
+      if (granted) {
+        await cancelAlarm();
+        await scheduleAlarm(sunRiseRef.current, newOffset, daysRef.current);
+      }
       setIsEnabled(true);
       await AsyncStorage.setItem('alarmEnabled', JSON.stringify(true));
     }
@@ -145,6 +164,7 @@ export default function HomeScreen() {
     if (!granted) return;
     setIsListening(true);
     setTranscript('');
+    transcriptRef.current = '';  // reset ref so old transcript isn't replayed
     ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: false });
   };
 
