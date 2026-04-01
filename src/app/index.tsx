@@ -38,7 +38,7 @@ export default function HomeScreen() {
       const load = async () => {
         setError(false);  // reset error state on each load attempt
         // Step 1: read all local AsyncStorage values in parallel — instant, no network
-        const [saved, savedOffset, savedDays, savedCity, cachedSunrise, cachedDate] =
+        const [saved, savedOffset, savedDays, savedCity, cachedSunrise, cachedDate, hasLaunched] =
           await Promise.all([
             AsyncStorage.getItem('alarmEnabled'),
             AsyncStorage.getItem('alarmOffset'),
@@ -46,7 +46,14 @@ export default function HomeScreen() {
             AsyncStorage.getItem('fallbackCity'),
             AsyncStorage.getItem('cachedSunrise'),
             AsyncStorage.getItem('cachedSunriseDate'),
+            AsyncStorage.getItem('hasLaunched'),
           ]);
+
+        // First launch — send to onboarding
+        if (!hasLaunched) {
+          router.replace('/onboarding');
+          return;
+        }
 
         // Apply them immediately so UI is correct before any network call
         if (saved !== null) setIsEnabled(JSON.parse(saved));
