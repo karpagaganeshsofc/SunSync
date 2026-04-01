@@ -1,5 +1,5 @@
 export function getAlarmTime(sunriseHour: number, sunriseMinute: number, offsetMinutes: number){
-    let total_minutes = ((sunriseHour*60 + sunriseMinute - offsetMinutes)+1440)%1440;
+    let total_minutes = ((sunriseHour*60 + sunriseMinute + offsetMinutes)+1440)%1440;
     
     let hour = Math.floor(total_minutes / 60);
     let minute = total_minutes % 60;

@@ -7,8 +7,8 @@ export async function fetchSunriseTime(latitude: number, longitude: number): Pro
         const response = await fetch(`https://api.sunrise-sunset.org/json?lat=${latitude}&lng=${longitude}&formatted=0`);
         const data = await response.json();
         const date = new Date(data.results.sunrise);
-        const hour = ( date.getUTCHours()+ 8 )% 24;
-        const minutes = date.getUTCMinutes();
+        const hour = date.getHours();
+        const minutes = date.getMinutes();
         return getAlarmTime(hour, minutes, 0);
       }
       catch (e){

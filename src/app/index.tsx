@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 import { useEffect, useRef, useState } from 'react';
-import { ImageBackground, StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, ImageBackground, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function HomeScreen() {
   const [isEnabled, setIsEnabled] = useState(false);
@@ -23,39 +23,62 @@ export default function HomeScreen() {
   // state for the transcribed text
   const [transcript, setTranscript] = useState<string>('');
   const [isListening, setIsListening] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const transcriptRef = useRef<string>('');
 
   useEffect(() => {
     const load = async () => {
+      // Step 1: read all local AsyncStorage values in parallel — instant, no network
+      const [saved, savedOffset, savedDays, savedCity, cachedSunrise, cachedDate] =
+        await Promise.all([
+          AsyncStorage.getItem('alarmEnabled'),
+          AsyncStorage.getItem('alarmOffset'),
+          AsyncStorage.getItem('alarmDays'),
+          AsyncStorage.getItem('fallbackCity'),
+          AsyncStorage.getItem('cachedSunrise'),
+          AsyncStorage.getItem('cachedSunriseDate'),
+        ]);
+
+      // Apply them immediately so UI is correct before any network call
+      if (saved !== null) setIsEnabled(JSON.parse(saved));
+      if (savedOffset) setOffset(JSON.parse(savedOffset));
+      if (savedDays) setDays(JSON.parse(savedDays));
+
+      // Step 2: show cached sunrise instantly if it's from today
+      const today = new Date().toDateString();
+      if (cachedSunrise && cachedDate === today) {
+        setSunRise(cachedSunrise);
+        setIsLoading(false);  // cached data is enough — skip loading screen
+      }
+
+      // Step 3: get coordinates
       let coords = await getCoordinates();
-      if(!coords){
-        const city = await AsyncStorage.getItem('fallbackCity');
-        if (city) coords = await getCityCoordinates(city);
+      if (!coords) {
+        if (savedCity) coords = await getCityCoordinates(savedCity);
       }
       if (!coords) {
         setError(true);
         return;
       }
-      const time = await fetchSunriseTime(coords.lat, coords.lng);
-      if (time) setSunRise(time);
-      else setError(true);
 
-      // after fetching sunrise, also load saved alarm state
-      const saved = await AsyncStorage.getItem('alarmEnabled');
-      if (saved !== null) setIsEnabled(JSON.parse(saved));
+      // Step 4: fetch sunrise and photo in parallel
+      const [time, photo] = await Promise.all([
+        fetchSunriseTime(coords.lat, coords.lng),
+        fetchSunRisePhoto(savedCity ?? 'sunrise'),
+      ]);
 
-      const savedOffset = await AsyncStorage.getItem('alarmOffset');
-      if (savedOffset) setOffset(JSON.parse(savedOffset));
+      if (time) {
+        setSunRise(time);
+        await AsyncStorage.setItem('cachedSunrise', time);
+        await AsyncStorage.setItem('cachedSunriseDate', today);
+      } else if (!cachedSunrise) {
+        setError(true);
+      }
 
-      const savedDays = await AsyncStorage.getItem('alarmDays');
-      if (savedDays) setDays(JSON.parse(savedDays));
-
-      const city = await AsyncStorage.getItem('fallbackCity');
-      const photo = await fetchSunRisePhoto(city ?? 'sunrise');
       if (photo) setPhotoUrl(photo);
-
-      };
+      setIsLoading(false);  // network done — hide loading screen
+    };
     load();
   }, []);
 
@@ -117,6 +140,16 @@ export default function HomeScreen() {
     ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: false });
   };
 
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingEmoji}>🌅</Text>
+        <Text style={styles.loadingText}>Finding your sunrise...</Text>
+        <ActivityIndicator size="large" color="#ff7b00" />
+      </View>
+    );
+  }
+
   return (
     // your code here
     <ImageBackground source={photoUrl ? { uri: photoUrl } : undefined} style={styles.container}>
@@ -147,6 +180,21 @@ const styles = StyleSheet.create({
     flex:1,
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0a0a1a',
+  },
+  loadingEmoji: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  loadingText: {
+    color: '#ff7b00',
+    fontSize: 18,
+    marginBottom: 24,
   },
   button:{
     alignItems: 'center',
