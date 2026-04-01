@@ -27,6 +27,13 @@ export default function Settings(){
         await AsyncStorage.setItem('fallbackCity', city);
         await AsyncStorage.setItem('alarmOffset', JSON.stringify(offset));
         await AsyncStorage.setItem('alarmDays', JSON.stringify(selectedDays));
+        // only clear sunrise cache if city changed — avoids unnecessary refetch
+        const previousCity = await AsyncStorage.getItem('fallbackCity');
+        if (city !== previousCity) {
+          await AsyncStorage.removeItem('cachedSunrise');
+          await AsyncStorage.removeItem('cachedSunriseDate');
+        }
+        await AsyncStorage.setItem('fallbackCity', city);
         router.back();
     }
 

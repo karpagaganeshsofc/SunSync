@@ -6,9 +6,9 @@ import { fetchSunriseTime } from '@/utils/sunriseUtils';
 import { getCountDown } from '@/utils/timeUtils';
 import { requestMicPermission } from '@/utils/voiceUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ImageBackground, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function HomeScreen() {
@@ -27,60 +27,68 @@ export default function HomeScreen() {
 
   const transcriptRef = useRef<string>('');
 
-  useEffect(() => {
-    const load = async () => {
-      // Step 1: read all local AsyncStorage values in parallel — instant, no network
-      const [saved, savedOffset, savedDays, savedCity, cachedSunrise, cachedDate] =
-        await Promise.all([
-          AsyncStorage.getItem('alarmEnabled'),
-          AsyncStorage.getItem('alarmOffset'),
-          AsyncStorage.getItem('alarmDays'),
-          AsyncStorage.getItem('fallbackCity'),
-          AsyncStorage.getItem('cachedSunrise'),
-          AsyncStorage.getItem('cachedSunriseDate'),
+  useFocusEffect(
+    useCallback(() => {
+      const load = async () => {
+        // Step 1: read all local AsyncStorage values in parallel — instant, no network
+        const [saved, savedOffset, savedDays, savedCity, cachedSunrise, cachedDate] =
+          await Promise.all([
+            AsyncStorage.getItem('alarmEnabled'),
+            AsyncStorage.getItem('alarmOffset'),
+            AsyncStorage.getItem('alarmDays'),
+            AsyncStorage.getItem('fallbackCity'),
+            AsyncStorage.getItem('cachedSunrise'),
+            AsyncStorage.getItem('cachedSunriseDate'),
+          ]);
+
+        // Apply them immediately so UI is correct before any network call
+        if (saved !== null) setIsEnabled(JSON.parse(saved));
+        if (savedOffset) setOffset(JSON.parse(savedOffset));
+        if (savedDays) setDays(JSON.parse(savedDays));
+
+        // Step 2: show cached sunrise instantly if it's from today
+        const today = new Date().toDateString();
+        const hasCache = !!(cachedSunrise && cachedDate === today);
+        if (hasCache) {
+          setSunRise(cachedSunrise!);
+          setIsLoading(false);  // cached data is enough — skip loading screen
+        } else {
+          setIsLoading(true);  // no cache (first open or city changed) — show spinner
+        }
+
+        // Step 3 & 4: only hit network if there's no valid cache
+        if (hasCache) return;
+
+        // city first, GPS as fallback
+        let coords: { lat: number; lng: number } | null = null;
+        if (savedCity) coords = await getCityCoordinates(savedCity);
+        if (!coords) coords = await getCoordinates();
+        if (!coords) {
+          setError(true);
+          setIsLoading(false);
+          return;
+        }
+
+        // fetch sunrise and photo in parallel
+        const [time, photo] = await Promise.all([
+          fetchSunriseTime(coords.lat, coords.lng),
+          fetchSunRisePhoto(savedCity ?? 'sunrise'),
         ]);
 
-      // Apply them immediately so UI is correct before any network call
-      if (saved !== null) setIsEnabled(JSON.parse(saved));
-      if (savedOffset) setOffset(JSON.parse(savedOffset));
-      if (savedDays) setDays(JSON.parse(savedDays));
+        if (time) {
+          setSunRise(time);
+          await AsyncStorage.setItem('cachedSunrise', time);
+          await AsyncStorage.setItem('cachedSunriseDate', today);
+        } else {
+          setError(true);
+        }
 
-      // Step 2: show cached sunrise instantly if it's from today
-      const today = new Date().toDateString();
-      if (cachedSunrise && cachedDate === today) {
-        setSunRise(cachedSunrise);
-        setIsLoading(false);  // cached data is enough — skip loading screen
-      }
-
-      // Step 3: get coordinates
-      let coords = await getCoordinates();
-      if (!coords) {
-        if (savedCity) coords = await getCityCoordinates(savedCity);
-      }
-      if (!coords) {
-        setError(true);
-        return;
-      }
-
-      // Step 4: fetch sunrise and photo in parallel
-      const [time, photo] = await Promise.all([
-        fetchSunriseTime(coords.lat, coords.lng),
-        fetchSunRisePhoto(savedCity ?? 'sunrise'),
-      ]);
-
-      if (time) {
-        setSunRise(time);
-        await AsyncStorage.setItem('cachedSunrise', time);
-        await AsyncStorage.setItem('cachedSunriseDate', today);
-      } else if (!cachedSunrise) {
-        setError(true);
-      }
-
-      if (photo) setPhotoUrl(photo);
-      setIsLoading(false);  // network done — hide loading screen
-    };
-    load();
-  }, []);
+        if (photo) setPhotoUrl(photo);
+        setIsLoading(false);
+      };
+      load();
+    }, [])
+  );
 
   useEffect(() => {
     if (sunRise === "Loading...") return;
